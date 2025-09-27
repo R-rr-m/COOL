@@ -49,26 +49,26 @@ class Queue inherits Object {
         }
     };
     
-    (* 入队操作：将元素添加到队列尾部 *)
-    enqueue(item : Object) : Object {
-        let new_node : QueueNode <- (new QueueNode).init(item, void) in
-        {
-            if isvoid front then
-                (* 如果队列为空，新节点同时是队首和队尾 *)
-                {
-                    front <- new_node;
-                    rear <- new_node;
-                }
-            else
-                (* 否则，将新节点添加到队尾，并更新队尾指针 *)
-                {
-                    rear.next <- new_node;
-                    rear <- new_node;
-                }
-            fi;
-            item;
-        }
-    };
+   (* 入队操作：将元素添加到队列尾部（遍历实现） *)
+enqueue(item : Object) : Object {
+    let new_node : QueueNode <- (new QueueNode).init(item, void),
+        point : QueueNode <- front
+    in {
+        if isvoid front then
+            {
+                front <- new_node;
+                rear <- new_node;
+            }
+        else {
+            while not isvoid point.getNext() loop
+                point <- point.getNext()
+            pool;
+            point.next <- new_node;
+            rear <- new_node;
+        } fi;
+        item;
+    }
+};
     
     (* 出队操作：移除并返回队首元素 *)
     dequeue() : Object {
@@ -115,21 +115,21 @@ class Queue inherits Object {
             io.out_string("Queue: [");
             
             while not isvoid current loop
-            {
-                case current.getItem() of
-                    i : Int => io.out_int(i);
-                    s : String => io.out_string(s);
-                    o : Object => io.out_string("Object");
-                esac;
-                
-                current <- current.getNext();
-                
-                if not isvoid current then
-                    io.out_string(", ")
-                else
-                    0  (* COOL语言要求else分支必须有表达式 *)
-                fi;
-            }
+                {
+                    case current.getItem() of
+                        i : Int => io.out_int(i);
+                        s : String => io.out_string(s);
+                        o : Object => io.out_string("Object")
+                    esac;
+                    
+                    current <- current.getNext();
+                    
+                    if not isvoid current then
+                        io.out_string(", ")
+                    else
+                        0  (* COOL语言要求else分支必须有表达式 *)
+                    fi;
+                }
             pool;
             
             io.out_string("]\n");
@@ -143,8 +143,9 @@ class Queue inherits Object {
  *)
 class Main inherits IO {
     main() : Object {
-        let queue : Queue <- (new Queue).init() in
+        let queue : Queue in
         {
+            queue <- (new Queue).init();
             out_string("=== 队列(Queue)测试 ===\n");
             
             (* 测试1：检查空队列 *)
@@ -172,15 +173,16 @@ class Main inherits IO {
             let front_item : Object <- queue.front() in
             {
                 out_string("队首元素: ");
-                if not isvoid front_item then
+                if not isvoid front_item then {
                     case front_item of
                         i : Int => out_int(i);
                         s : String => out_string(s);
-                        o : Object => out_string("Object");
-                    esac
+                        o : Object => out_string("Object")
+                    esac;
                     out_string("\n");
+                }
                 else
-                    out_string("队列为空\n");
+                    out_string("队列为空\n")
                 fi;
             };
             
@@ -189,15 +191,16 @@ class Main inherits IO {
             let item1 : Object <- queue.dequeue() in
             {
                 out_string("出队元素: ");
-                if not isvoid item1 then
+                if not isvoid item1 then {
                     case item1 of
                         i : Int => out_int(i);
                         s : String => out_string(s);
-                        o : Object => out_string("Object");
-                    esac
+                        o : Object => out_string("Object")
+                    esac;
                     out_string("\n");
+                }
                 else
-                    out_string("队列为空\n");
+                    out_string("队列为空\n")
                 fi;
             };
             
@@ -210,30 +213,32 @@ class Main inherits IO {
             let item2 : Object <- queue.dequeue() in
             {
                 out_string("出队元素: ");
-                if not isvoid item2 then
+                if not isvoid item2 then {
                     case item2 of
                         i : Int => out_int(i);
                         s : String => out_string(s);
-                        o : Object => out_string("Object");
-                    esac
+                        o : Object => out_string("Object")
+                    esac;
                     out_string("\n");
+                }
                 else
-                    out_string("队列为空\n");
+                    out_string("队列为空\n")
                 fi;
             };
             
             let item3 : Object <- queue.dequeue() in
             {
                 out_string("出队元素: ");
-                if not isvoid item3 then
+                if not isvoid item3 then {
                     case item3 of
                         i : Int => out_int(i);
                         s : String => out_string(s);
-                        o : Object => out_string("Object");
-                    esac
+                        o : Object => out_string("Object")
+                    esac;
                     out_string("\n");
+                }
                 else
-                    out_string("队列为空\n");
+                    out_string("队列为空\n")
                 fi;
             };
             
@@ -252,5 +257,4 @@ class Main inherits IO {
         }
     };
 };
-    };
 };
