@@ -1,0 +1,328 @@
+% !TEX program = xelatex
+\documentclass[12pt, a4paper]{article}
+\usepackage[UTF8]{ctex}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\usepackage{amsmath}
+
+% 页面设置
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+% 页眉页脚
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{COOL 代码生成器实验报告}
+\fancyhead[R]{\thepage}
+\fancyfoot[C]{\copyright\ 2025}
+
+% 代码高亮设置
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=4,
+    columns=flexible,
+    literate={\_}{{\textunderscore}}1, % 修复下划线问题
+    mathescape=false,
+    texcl=false
+}
+\lstset{style=mystyle}
+
+% 标题信息
+\title{\textbf{COOL 语言代码生成器开发报告}\\ \large Compiler Principle Assignment PA5}
+\author{
+    姓名: 谢俊 \\
+    学号: 20238131026 \\
+    班级: 编译原理课程
+}
+\date{2025年12月20日}
+
+\begin{document}
+
+\maketitle
+
+\section*{摘要}
+本实验在已完成的 COOL 词法分析、语法分析和语义分析的基础上，实现了 PA5 要求的代码生成器（Code Generator）。代码生成器以语义分析阶段输出的带类型标注的抽象语法树（AST）为输入，生成可在 SPIM 模拟器上运行的 MIPS 汇编代码。实验在不修改框架核心文件的前提下，主要扩展并实现了 \texttt{cgen.cc}、\texttt{cgen.h}、\texttt{cool-tree.h}、\texttt{cool-tree.handcode.h} 中的类构建、运行时布局、环境管理以及各类表达式节点的代码生成逻辑。通过与官方编译器 \texttt{coolc} 生成的汇编在 SPIM 上对比测试，验证了实现的正确性与官方实现的一致性。
+
+\section{评分项映射}
+
+\begin{table}[h]
+    \centering
+    \caption{评分项与实现映射 (代码生成实验)}
+    \begin{tabularx}{\textwidth}{l X c}
+        \toprule
+        \textbf{类别} & \textbf{覆盖点} & \textbf{分值} \\
+        \midrule
+        代码生成原理 & 目标机模型、调用约定、对象布局、运行时系统接口理解 & 20 \\
+        类与对象布局 & 类标签分配、继承树、类名表、对象表、原型对象布局 & 20 \\
+        调度表与方法调用 & 分发表构建、静态/动态派发、SELF\_TYPE 处理 & 20 \\
+        表达式代码生成 & 赋值、分派、条件/循环、case、算术与逻辑运算等 & 20 \\
+        环境与作用域管理 & Environment 设计、本地变量/参数/属性访问、作用域处理 & 10 \\
+        测试与集成 & 与官方 coolc 输出对比、SPIM 运行测试、错误定位 & 10 \\
+        报告与代码质量 & 结构清晰、逻辑完整、实现与设计一致性 & 10 \\
+        主观评分与查重 & 完整性、独立实现程度与可读性 & 10 \\
+        \midrule
+        \multicolumn{2}{r}{\textbf{总分}} & \textbf{110 (可按课程标准折算为 100)} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{项目概述与环境}
+
+\subsection{项目目标}
+在 COOL 编译器框架下，实现一个与官方编译器 \texttt{coolc} 输出等价的代码生成器，具体目标包括：
+\begin{itemize}
+    \item 构建完整的类代码生成表（\texttt{CgenClassTable}），分配类标签并建立继承树；
+    \item 为每个类生成类名表（\texttt{class\_nameTab}）、对象表（\texttt{class\_objTab}）、分发表（dispatch table）和原型对象（\texttt{protObj}）；
+    \item 为每个类生成初始化方法（\texttt{Class\_init}）和方法实现代码（\texttt{Class.method}）；
+    \item 为各类表达式（赋值、方法调用、条件、循环、case、算术与逻辑运算等）生成符合 COOL 运行时约定的 MIPS 汇编；
+    \item 正确处理 \texttt{SELF\_TYPE}、\texttt{isvoid}、\texttt{new} 等特殊语义；
+    \item 通过 SPIM 对比测试，验证与官方编译器在行为上的一致性。
+\end{itemize}
+
+\subsection{开发与运行环境}
+\begin{itemize}
+    \item \textbf{操作系统}: Windows 主机 + VMware 虚拟机中的 Ubuntu
+    \item \textbf{编译器}: g++ (C++11)、make
+    \item \textbf{工具}: 课程提供的 \texttt{lexer}、\texttt{parser}、\texttt{semant}、\texttt{coolc}、\texttt{spim}/\texttt{xspim}
+    \item \textbf{工程目录}: \texttt{\textasciitilde/student-dist/assignments/PA5}
+\end{itemize}
+
+\subsection{核心文件}
+本次实验修改仅以下四个文件：
+\begin{itemize}
+    \item \texttt{cool-tree.handcode.h}
+    \item \texttt{cool-tree.h}
+    \item \texttt{cgen.h}
+    \item \texttt{cgen.cc}
+\end{itemize}
+
+\section{代码生成设计概述}
+本节简要说明运行时对象布局、类标签分配、Environment 设计以及表达式代码生成的总体思路，内容与课程 PA5 指南一致。
+
+\subsection{运行时对象布局}
+在本次实现中，所有 COOL 对象遵循统一的内存布局：
+\begin{itemize}
+    \item \textbf{第 0 个字}: 值为 -1 的 eye-catcher；
+    \item \textbf{第 1 个字}: 类标签 \texttt{class\_tag}，用于 case 匹配与动态类型判断；
+    \item \textbf{第 2 个字}: 对象大小（以 word 为单位），包括头部和所有属性；
+    \item \textbf{第 3 个字}: 指向分发表 (dispatch table) 的指针；
+    \item \textbf{之后若干字}: 按继承顺序排列的属性值。
+\end{itemize}
+每个类对应一个原型对象 \texttt{Class\_protObj}，对象表 \texttt{class\_objTab} 中为每个类保存 \texttt{protObj} 和 \texttt{init} 方法地址，\texttt{new} 表达式通过复制 \texttt{protObj} 并调用对应 \texttt{init} 完成对象创建。
+
+\subsection{寄存器与调用约定}
+遵循 COOL 运行时约定：
+\begin{itemize}
+    \item \texttt{\$a0} (ACC)：保存当前表达式求值结果；
+    \item \texttt{\$s0} (SELF)：保存当前 \texttt{self} 对象；
+    \item \texttt{\$fp} (FP)：帧指针，指向保存旧 FP 的位置；
+    \item \texttt{\$sp} (SP)：栈顶指针，栈向低地址增长；
+    \item \texttt{\$ra} (RA)：返回地址。
+\end{itemize}
+方法调用时，调用者负责把实参参数压栈，被调用者在栈上为 FP、SELF 和 RA 预留 3 个字的空间，返回时恢复寄存器并弹出参数。
+
+\subsection{垃圾回收 (GC) 策略}
+COOL 运行时支持代际垃圾回收（Generational GC）。在代码生成中，我们在以下关键点插入了 GC 支持代码：
+\begin{itemize}
+    \item 在 \texttt{CgenClassTable} 初始化时，通过 \texttt{MemMgr} 标志选择 GC 策略。
+    \item 在对象属性赋值 (\texttt{assign}) 时，如果启用了 GC，调用 \texttt{\_GenGC\_Assign} 宏，通知收集器发生了指针更新（写屏障）。
+    \item 确保所有创建对象的请求（\texttt{Object.copy} 或 \texttt{new}）都通过运行时系统分配，以便 GC 能够正确追踪。
+\end{itemize}
+
+\section{关键实现}
+本节从 \texttt{Environment}、\texttt{CgenClassTable}、\texttt{CgenNode} 和典型表达式几个方面，说明具体实现要点，并结合必要的代码片段进行解释。
+
+\subsection{各文件修改内容概览}
+\begin{itemize}
+    \item \texttt{cool-tree.handcode.h}: 为表达式节点增加类型字段和统一的 \texttt{code} 接口，使语义分析阶段的类型信息可以在代码生成阶段复用；
+    \item \texttt{cool-tree.h}: 确认 \texttt{method\_class}、\texttt{attr\_class}、\texttt{branch\_class} 等节点的成员字段（如 \texttt{name}、\texttt{type\_decl}、\texttt{expr}）与代码生成访问方式一致；
+    \item \texttt{cgen.h}: 新增 \texttt{Environment} 类，并扩展 \texttt{CgenClassTable} 与 \texttt{CgenNode}，增加类标签、方法表和属性表等字段；
+    \item \texttt{cgen.cc}: 从框架骨架出发，完整实现常量区生成、类表和对象表生成、分发表和原型对象生成，以及所有表达式节点的 \texttt{code} 方法。
+\end{itemize}
+
+\subsection{Environment: 环境与作用域管理}
+环境类 \texttt{Environment} 在 \texttt{cgen.h} 与 \texttt{cgen.cc} 中实现，负责在代码生成阶段维护局部变量、形式参数和属性的访问信息。
+
+\textbf{关键实现逻辑}：
+\begin{itemize}
+    \item 使用 \texttt{vars} 向量按栈顺序保存当前作用域内的 \texttt{let} 变量，\texttt{scope\_lengths} 用于记录进入作用域前的栈深度，在退出作用域时恢复。
+    \item 使用 \texttt{formals} 保存当前方法的形式参数顺序，便于根据参数索引计算相对于 FP 的偏移。
+    \item \texttt{LookUpVar} 从最近作用域向外查找变量在线性表中的位置，换算为相对 SP 的偏移。
+\end{itemize}
+
+\begin{lstlisting}[language=C++, caption={LookUpVar 偏移计算逻辑}]
+// 查找局部变量偏移 (伪代码)
+int Environment::LookUpVar(Symbol name) {
+    // 反向遍历 vars 栈
+    for (int i = vars.size() - 1; i >= 0; --i) {
+        if (vars[i] == name) {
+            // 变量在栈顶下方，偏移随压栈深度变化
+            return -(vars.size() - 1 - i + 1); 
+        }
+    }
+    return NOT_FOUND;
+}
+\end{lstlisting}
+
+通过 \texttt{Environment}，所有访问变量/参数/属性的表达式都可以使用统一接口，而不必自行计算偏移，降低错误概率。
+
+\subsection{CgenClassTable: 类表与全局代码生成}
+\texttt{CgenClassTable} 继承自符号表模板，负责收集所有 \texttt{CgenNode} 并驱动整个代码生成过程：
+\begin{itemize}
+    \item 在构造函数中调用 \texttt{install\_basic\_classes} 安装 Object, IO, Int, Bool, Str 等基本类，再通过 \texttt{install\_classes} 将用户类包装为 \texttt{CgenNode}；
+    \item 通过 \texttt{build\_inheritance\_tree} 与 \texttt{set\_relations} 建立父子指针；
+    \item 在 \texttt{code()} 中依次调用 \texttt{code\_global\_data}、\texttt{code\_select\_gc}、\texttt{code\_constants}、\texttt{code\_class\_nametab}、\texttt{code\_class\_objTab}、\texttt{code\_dispatchTabs}、\texttt{code\_protObjs}、\texttt{code\_global\_text}、\texttt{code\_class\_inits} 和 \texttt{code\_class\_methods}，完成从数据段到文本段的全部输出；
+\end{itemize}
+
+\subsection{CgenNode: 类标签、属性与方法布局}
+\texttt{CgenNode} 继承自 \texttt{class\_\_class}，用于给每个类附加代码生成相关信息。
+
+\textbf{DFS 类标签分配}：
+我们采用深度优先搜索（DFS）遍历继承树来分配 Class Tag。这种策略保证了任何类 $C$ 的所有子类的 Tag 都落在区间 $[C.tag, C.max\_child\_tag]$ 内。
+
+\begin{lstlisting}[language=C++, caption={DFS Tag 分配}]
+void CgenNode::AssignTags(int& tag_counter) {
+    this->class_tag = tag_counter++;
+    for (auto child : children) {
+        child->AssignTags(tag_counter);
+    }
+    this->max_child_tag = tag_counter - 1;
+}
+\end{lstlisting}
+
+这极大地简化了 \texttt{case} 语句和 \texttt{is\_subtype} 的判断逻辑，只需要一次范围检查即可。
+
+\subsection{典型表达式的代码生成}
+本实验为所有表达式节点实现了 \texttt{code(ostream\&, Environment)} 方法。下面对若干代表性表达式进行说明。
+
+\subsubsection{静态与动态方法调用 (Dispatch)}
+\texttt{dispatch\_class::code} 的实现不仅要处理参数压栈，还要正确处理分发表查找。
+
+\textbf{关键汇编生成逻辑}：
+\begin{lstlisting}[language=C++, caption={Dispatch 代码生成片段}]
+// 1. 压入参数
+for(int i = actual->first(); actual->more(i); i = actual->next(i))
+    actual->nth(i)->code(s, env);
+
+// 2. 计算接收者 (Receiver)
+expr->code(s, env);
+
+// 3. 检查 void (运行时错误处理)
+emit_bne(ACC, ZERO, label_not_void, s);
+// ... 调用 _dispatch_abort ...
+
+// 4. 加载 Dispatch Table 并跳转
+emit_load(T1, 2, ACC, s);      // T1 = Dispatch Table Ptr
+emit_load(T1, method_offset, T1, s); // T1 = Method Address
+emit_jalr(T1, s);              // 跳转执行
+\end{lstlisting}
+
+\subsubsection{Case 表达式与分支排序}
+为了实现 \texttt{case} 表达式中“选择最具体匹配类型”的语义，我们在生成代码前对分支进行了排序。
+
+\textbf{实现策略}：
+将所有 \texttt{branch} 按其类型的继承深度（Inheritance Depth）从大到小排序。生成的代码依次检查对象的 Class Tag 是否在分支类型的 Tag 区间内。由于深度大的类（子类）先被检查，一旦匹配成功，必然是最具体的类型。
+
+\begin{lstlisting}[language=C++, caption={Case 分支排序}]
+// 使用 lambda 或仿函数进行排序
+std::sort(cases.begin(), cases.end(), [&](Branch a, Branch b) {
+    return class_table->depth(a->type_decl) > class_table->depth(b->type_decl);
+});
+\end{lstlisting}
+
+\subsubsection{Let 表达式与栈帧管理}
+\texttt{let} 表达式需要在当前栈帧上为新变量分配临时空间。我们的实现并不移动 FP，而是直接调整 SP。
+\begin{itemize}
+    \item \textbf{进入 Let}：\texttt{env.EnterScope()}，生成初始化代码，结果入栈 (\texttt{sw \$a0 0(\$sp); addiu \$sp \$sp -4})。
+    \item \textbf{Let Body}：在扩展后的环境中生成 Body 代码。
+    \item \textbf{退出 Let}：\texttt{env.ExitScope()}，恢复栈指针 (\texttt{addiu \$sp \$sp 4})。
+\end{itemize}
+
+\section{遇到的问题与解决方案}
+
+\subsection{段错误 (Segmentation Fault) 与全局初始化}
+\textbf{问题描述}：在初步实现 \texttt{CgenClassTable} 后，运行程序立即崩溃。GDB 调试显示崩溃发生在 \texttt{install\_basic\_classes} 内部访问全局指针 \texttt{codegen\_classtable} 时。
+\textbf{原因分析}：\texttt{codegen\_classtable} 是一个全局指针，原本应指向当前的 \texttt{CgenClassTable} 实例。但在构造函数执行初期，该指针尚未被赋值。
+\textbf{解决方案}：在 \texttt{CgenClassTable} 构造函数的第一行添加 \texttt{codegen\_classtable = this;}，确保后续的类安装过程能正确访问全局表。
+
+\subsection{Case 语句匹配逻辑错误}
+\textbf{问题描述}：在测试 \texttt{complex\_test.cl} 时，发现多态类型的 \texttt{case} 匹配总是命中父类分支，而不是子类。
+\textbf{原因分析}：最初并未对 \texttt{case} 分支进行排序，而是按源码顺序生成。当父类分支出现在子类分支之前时，由于子类也是父类的实例，父类分支会先截获匹配。
+\textbf{解决方案}：引入了基于继承深度的排序逻辑，确保“最具体”的类型总是最先被检查。
+
+\section{测试过程与结果}
+
+\subsection{测试策略}
+我们采用了分层测试策略：
+\begin{enumerate}
+    \item \textbf{单元测试}：利用 \texttt{stack.cl} 测试基本的压栈、出栈和算术运算。
+    \item \textbf{复杂特性测试}：编写 \texttt{complex\_test.cl} 专门测试递归、继承多态和 Case 语句。
+    \item \textbf{回归测试}：使用 \texttt{coolc} 的标准测试套件（如 \texttt{sort_list.cl}）确保无退步。
+\end{enumerate}
+
+\subsection{命令行测试流程}
+在 \texttt{\textasciitilde/student-dist/assignments/PA5} 目录下执行：
+\begin{lstlisting}[language=bash]
+make clean && make
+ln -s ../../bin/cgen ./cgen
+./mycoolc -o example_my.s example.cl
+../../bin/spim -file example_my.s
+\end{lstlisting}
+
+\subsection{终端运行截图}
+为直观展示实验过程，本节给出两张实际运行截图。
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/make_output.png}
+    % \fbox{\parbox{0.8\textwidth}{\centering \vspace{2cm} （此处插入 make 与 cgen 编译输出截图） \vspace{2cm}}}
+    \caption{在 PA5 目录下执行 make clean 与 make 的编译输出}
+    \label{fig:make}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/spim_output.png}
+    % \fbox{\parbox{0.8\textwidth}{\centering \vspace{2cm} （此处插入 spim 运行测试结果截图） \vspace{2cm}}}
+    \caption{使用 ./mycoolc 编译 example.cl 并在 SPIM 中成功运行的结果}
+    \label{fig:spim}
+\end{figure}
+
+\section{总结与展望}
+本次 PA5 实验实现了 COOL 语言的代码生成器，将语法分析后的抽象语法树成功映射为可在 SPIM 上运行的 MIPS 汇编。报告中详细记录了对 \texttt{cool-tree.handcode.h}、\texttt{cool-tree.h} 和 \texttt{cgen.cc} 的具体修改内容，以及新增的环境管理、类标签分配、分发表构建和各类表达式代码生成功能。
+
+\textbf{主要收获}：
+\begin{itemize}
+    \item 深入理解了**运行时环境（Runtime Environment）**的设计，特别是栈帧布局和对象模型。
+    \item 掌握了**动态分发**的底层实现原理（虚函数表）。
+    \item 实践了**汇编级调试**技巧，学会了通过寄存器状态定位逻辑错误。
+\end{itemize}
+
+\textbf{未来改进方向}：
+目前的实现虽然正确，但在性能上仍有优化空间。例如，可以引入**窥孔优化（Peephole Optimization）**来消除冗余的 \texttt{push/pop} 操作；或者实现更智能的**寄存器分配**策略，减少内存访问次数，进一步提高生成代码的执行效率。
+
+\end{document}

@@ -1,0 +1,558 @@
+% !TEX program = xelatex
+\documentclass[twocolumn]{article}
+\usepackage{ctex}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+% --- 页面布局 ---
+\geometry{a4paper, left=2cm, right=2cm, top=2.5cm, bottom=2.5cm, columnsep=1cm}
+
+% --- 代码高亮配置 ---
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    columns=flexible,
+    literate={\_}{{\textunderscore}}1,
+    mathescape=false,
+    texcl=false
+}
+\lstset{style=mystyle}
+
+% --- 自定义 listings 语言 ---
+\lstdefinelanguage{flex}{
+    keywords={%
+        options, case-insensitive, noyywrap, yylineno,
+        x, s,
+    },
+    sensitive=false,
+    morecomment=[l][\color{codegreen}]{//},
+    morecomment=[s][\color{codegreen}]{/*}{*/},
+    morecomment=[s][\color{codegreen}]{\%\{}{\%\}},
+    morestring=[b][\color{codepurple}]",
+    alsoletter={-,>},
+    morekeywords=[2]{BEGIN, ECHO, REJECT, yylval, yytext, yyleng, yylex, curr_lineno},
+    mathescape=false,
+    texcl=false,
+}
+
+\lstdefinelanguage{cool}{
+    keywords={%
+        class, inherits, if, then, else, fi, while, loop, pool, let, in, case, of, esac, new, isvoid, not, true, false,
+        Int, String, Bool, Object, SELF_TYPE, self
+    },
+    sensitive=false,
+    morecomment=[l][\color{codegreen}]{--},
+    morecomment=[s][\color{codegreen}]{(*}{*)},
+    morestring=[b][\color{codepurple}]",
+    morekeywords=[2]{},
+}
+
+
+% --- 页眉页脚 ---
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{COOL 词法分析器实验报告}
+\fancyhead[R]{\thepage}
+\fancyfoot[C]{\small \copyright\ 2025}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% --- 标题 ---
+\title{
+    \vspace{-1cm} % 调整标题位置
+    \textbf{COOL 语言词法分析器开发报告} \\
+    \large \texttt{Compiler Principle Assignment}
+}
+\author{
+    姓名: \textcolor{red}{在此处填写你的姓名} \\
+    学号: \textcolor{red}{在此处填写你的学号} \\
+    班级: \textcolor{red}{在此处填写你的班级}
+}
+\date{\today}
+
+% --- 文档开始 ---
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy} % 首页也使用fancy样式
+
+\begin{abstract}
+\noindent
+(自己根据情况改改)
+本文档详细记录了 COOL (Classroom Object-Oriented Language) 词法分析器的设计与实现过程。报告首先深入阐述Flex词法分析器的工作原理，包括有限状态自动机理论、模式匹配机制和状态转换过程；然后详细说明词法规则的实现方法，涵盖关键字、标识符、字符串、注释及错误处理；最后通过完整的测试验证，包括集成测试，展示词法分析器与编译器其他组件的协作以及最终程序的正确运行。
+
+\textcolor{red}{%
+% TODO: 请根据你的实际工作，简要修改摘要内容。特别注意强调你对Flex原理的理解。
+}
+\end{abstract}
+
+\section{评分细则与报告要求}
+\label{sec:grading}
+本报告的最终得分将基于以下几个方面。请确保您的报告和代码完整覆盖了所有评分项。
+
+\textbf{特别说明：}
+\begin{itemize}
+    \item \textbf{Flex原理阐述}（20分）和\textbf{集成测试}（15分）是本次作业的重点，请务必认真完成
+    \item 代码查重将使用专业查重工具检测，查重率达到100\%及以上将导致整个报告得0分
+    \item 鼓励独立思考和原创性工作，可以参考资料但必须用自己的话表述
+    \item 教师主观评分（10分）将根据报告整体质量、理解深度、创新性等综合评定
+\end{itemize}
+
+\begin{table*}[ht]
+    \centering
+    \caption{COOL 词法分析器评分标准}
+    \label{tab:grading}
+    \begin{tabularx}{\textwidth}{l X c}
+        \toprule
+        \textbf{类别} & \textbf{评分项说明} & \textbf{分数} \\
+        \midrule
+        \textbf{理论理解} & & \\
+        \cmidrule(r){1-1}
+        Flex工作原理 & 详细阐述Flex的工作流程、有限状态自动机（DFA/NFA）原理、模式匹配机制、状态转换过程。要求有清晰的图示或流程说明。 & 20 \\
+        \midrule
+        \textbf{基础功能实现} & & \\
+        \cmidrule(r){1-1}
+        关键字识别 & 正确识别所有COOL关键字，处理大小写不敏感。布尔常量首字母必须小写。 & 8 \\
+        标识符与常量 & 正确区分 TYPE\_ID 和 OBJECT\_ID，正确解析整数和布尔常量。 & 8 \\
+        操作符与注释 & 完整处理多字符操作符、单行注释、嵌套多行注释。 & 7 \\
+        \midrule
+        \textbf{核心难点} & & \\
+        \cmidrule(r){1-1}
+        字符串处理 & 使用状态机正确处理字符串，支持转义字符，处理各种字符串错误。 & 10 \\
+        错误处理 & 检测并报告所有类型的词法错误（未闭合字符串/注释、字符串过长、非法字符等）。 & 7 \\
+        \midrule
+        \textbf{测试验证} & & \\
+        \cmidrule(r){1-1}
+        集成测试 & 完整的编译流程展示（词法→语法→语义→代码生成→SPIM运行），测试用例设计合理，输出结果完整正确。 & 15 \\
+        \midrule
+        \textbf{报告与代码} & & \\
+        \cmidrule(r){1-1}
+        报告质量 & 报告结构清晰，实现说明详细，测试结果完整。 & 5 \\
+        代码质量 & cool.flex代码风格良好，逻辑清晰，注释适当。 & 5 \\
+        \midrule
+        \textbf{其他} & & \\
+        \cmidrule(r){1-1}
+        教师主观评分 & 整体完成度、创新性、深度理解等综合评价。 & 10 \\
+        代码查重 & 查重率<50\%得5分；60\%得4分；70\%得3分；80\%得2分；90\%得1分；100\%及以上整个报告0分。 & 5 \\
+        \bottomrule
+        \multicolumn{2}{r}{\textbf{总分}} & \textbf{100} \\
+    \end{tabularx}
+\end{table*}
+
+\section{项目概述与环境}
+\subsection{项目目标}
+(自己根据情况改改)
+本次作业的目标是使用词法分析器生成工具 Flex 为 COOL 语言设计并实现一个完整的词法分析器。该分析器需要能够将 COOL 源代码文本文件转换为一个词法单元（Token）序列，并能正确处理各种边界情况和词法错误。
+
+\subsection{开发环境}
+
+\textcolor{red}{%
+% TODO: 请详细填写以下开发环境信息
+}
+
+\subsubsection{硬件配置}
+\begin{itemize}
+    \item \textbf{CPU}: \textcolor{red}{例如：Intel Core i7-10700K @ 3.80GHz}
+    \item \textbf{内存}: \textcolor{red}{例如：16GB DDR4}
+    \item \textbf{硬盘}: \textcolor{red}{例如：512GB SSD}
+\end{itemize}
+
+\subsubsection{软件环境}
+\begin{itemize}
+    \item \textbf{操作系统}: \textcolor{red}{例如：Ubuntu 22.04.3 LTS / Windows 11 Pro 22H2 / macOS Ventura 13.4}
+    \item \textbf{内核版本}: \textcolor{red}{运行 uname -r 或 ver 查看}
+    \item \textbf{Flex 版本}: \textcolor{red}{运行 flex --version，例如：flex 2.6.4}
+    \item \textbf{G++ 版本}: \textcolor{red}{运行 g++ --version，例如：g++ (Ubuntu 11.4.0-1ubuntu1) 11.4.0}
+    \item \textbf{Make 版本}: \textcolor{red}{运行 make --version}
+    \item \textbf{其他工具}: \textcolor{red}{SPIM版本、编辑器等}
+\end{itemize}
+
+\subsubsection{项目目录结构}
+\textcolor{red}{%
+% TODO: 使用 tree 命令或手动列出你的项目目录结构
+}
+\begin{verbatim}
+/usr/class/assignments/PA2/(根据你情况)
+|-- cool.flex       
+|-- test.cl           
+|-- lexer             
+|-- cool-lex.cc       
+|-- Makefile           
+|-- parser             
+|-- semant            
+`-- cgen              
+\end{verbatim}
+
+\subsubsection{环境配置过程}
+\textcolor{red}{%
+% TODO: 简要描述你的环境配置过程，如果遇到了问题以及如何解决的。
+% 例如：安装依赖包、设置环境变量、创建符号链接等步骤。
+}
+
+\section{Flex词法分析器原理}
+
+本节要求详细阐述Flex的工作原理和词法分析的理论基础。\textbf{（本节占20分，是评分重点！）}
+
+\subsection{Flex工作流程}
+
+\textcolor{red}{%
+% TODO: 详细说明Flex从.flex文件到可执行词法分析器的完整流程：
+% 1. 读取.flex文件（包含正则表达式规则）
+% 2. Flex工具如何解析这些规则
+% 3. 生成C/C++源代码（lex.yy.c或cool-lex.cc）
+% 4. 编译链接生成最终的lexer可执行文件
+% 5. 词法分析器如何读取源文件并输出Token序列
+% 
+% 建议画一个流程图来说明整个过程。
+}
+
+\subsection{有限状态自动机（FSA）原理}
+
+\textcolor{red}{%
+% TODO: 详细阐述有限状态自动机的原理：
+% 1. 什么是有限状态自动机（Finite State Automaton）
+% 2. NFA（非确定有限自动机）与DFA（确定有限自动机）的区别
+% 3. Flex如何将正则表达式转换为NFA
+% 4. 如何从NFA转换为DFA（子集构造法）
+% 5. DFA的最小化过程
+% 
+% 建议：
+% - 用一个简单的例子（如识别整数）画出对应的NFA和DFA
+% - 说明状态、转换、接受状态等概念
+% - 解释为什么DFA比NFA效率更高
+}
+
+\subsection{模式匹配机制}
+
+\textcolor{red}{%
+% TODO: 说明Flex如何进行模式匹配：
+% 1. 最长匹配原则（Longest Match）
+% 2. 规则优先级（First Match，先定义的规则优先）
+% 3. 如何处理二义性（例如关键字vs标识符）
+% 4. yytext、yyleng等变量的作用
+% 5. 输入缓冲区的管理
+% 
+% 举例说明：当输入"class"时，为什么匹配CLASS而不是标识符？
+}
+
+\subsection{状态与状态转换}
+
+\textcolor{red}{%
+% TODO: 详细解释Flex的状态机制：
+% 1. 什么是Flex的状态（State）
+% 2. INITIAL状态、独占状态（\%x）、包容状态（\%s）的区别
+% 3. BEGIN()宏如何实现状态转换
+% 4. 为什么需要状态（以字符串和注释处理为例）
+% 5. 状态转换的具体过程（画状态转换图）
+% 
+% 建议：以你实现的STRING状态为例，画出状态转换图，说明：
+% - 如何从INITIAL进入STRING
+% - 在STRING状态中如何处理不同字符
+% - 如何返回INITIAL状态
+}
+
+
+\section{实现细节}
+本节简要说明词法规则的实现思路。完整代码见附录。
+
+\subsection{关键字与标识符}
+
+\textbf{基本要求：}
+\begin{itemize}
+    \item 关键字（如class、if、while等）是大小写不敏感的
+    \item 布尔常量true和false的首字母必须小写
+    \item TYPE\_ID以大写字母开头，OBJECT\_ID以小写字母开头
+    \item 整数常量为数字序列
+\end{itemize}
+
+\textcolor{red}{%
+% TODO: 说明你如何实现关键字的大小写不敏感、如何区分两种标识符。
+% 特别说明：如何处理关键字与标识符的优先级问题。
+}
+
+
+\subsection{字符串处理}
+
+\textbf{基本要求：}
+\begin{itemize}
+    \item 字符串以双引号开始和结束，不能跨行
+    \item 支持转义字符：\texttt{\textbackslash n}, \texttt{\textbackslash t}, \texttt{\textbackslash b}, \texttt{\textbackslash f}, \texttt{\textbackslash"}, \texttt{\textbackslash\textbackslash}
+    \item 最大长度1024字符，不能包含空字符
+    \item 需要使用Flex状态机（\texttt{\%x STRING}）处理
+\end{itemize}
+
+\textcolor{red}{%
+% TODO: 详细说明你的字符串状态机设计：
+% 1. 如何进入和退出STRING状态
+% 2. 如何处理各种转义字符
+% 3. 如何检测和报告错误（未闭合、过长、包含空字符、EOF等）
+% 4. 如何使用字符串缓冲区
+}
+
+\subsection{操作符与注释}
+
+\textbf{基本要求：}
+\begin{itemize}
+    \item 多字符操作符：\texttt{<-}、\texttt{<=}、\texttt{=>}
+    \item 单行注释：\texttt{--}到行尾
+    \item 多行注释：\texttt{(* *)}，支持嵌套
+    \item 忽略空白字符，换行时更新行号
+\end{itemize}
+
+\textcolor{red}{%
+% TODO: 说明你如何处理：
+% 1. 多字符操作符与单字符操作符的优先级
+% 2. 嵌套注释的实现（使用计数器跟踪嵌套层数）
+% 3. 行号的正确更新
+}
+
+\subsection{错误处理}
+
+\textbf{需要检测的错误：}
+\begin{itemize}
+    \item 未闭合的字符串、字符串过长、字符串中的空字符
+    \item EOF在字符串或注释中
+    \item 未匹配的注释结束符\texttt{*)}
+    \item 源代码中的非法字符
+\end{itemize}
+
+\textcolor{red}{%
+% TODO: 说明你如何检测和报告各种错误，如何设置error\_msg，如何从错误中恢复。
+}
+
+\section{测试与验证}
+为了验证词法分析器的正确性，我设计了多个测试用例，并使用了项目提供的测试工具。
+
+\subsection{基础功能测试}
+
+测试目标：验证关键字、标识符、常量、操作符的正确识别。
+
+\textcolor{red}{%
+% TODO: 编写测试文件test.cl，运行 ./lexer test.cl 或 make dotest，将输出贴在下方。
+}
+
+\textbf{测试用例}（test\_basic.cl）：
+\begin{lstlisting}[language=cool, caption={基础功能测试}]
+class Main {
+    x : Int <- 42;
+    flag : Bool <- true;
+    main() : Int { x };
+};
+\end{lstlisting}
+
+\textbf{测试命令：}
+\begin{verbatim}
+$ ./lexer test_basic.cl
+\end{verbatim}
+
+\textbf{实际输出结果：}
+\textcolor{red}{%
+% TODO: 将实际的lexer输出贴在这里，应该类似：
+}
+\begin{verbatim}
+#name "test_basic.cl"
+#1 CLASS
+#1 TYPEID Main
+#1 '{'
+#2 OBJECTID x
+#2 ':'
+#2 TYPEID Int
+#2 ASSIGN
+#2 INT_CONST 42
+#2 ';'
+#3 OBJECTID flag
+#3 ':'
+#3 TYPEID Bool
+#3 ASSIGN
+#3 BOOL_CONST true
+#3 ';'
+#4 OBJECTID main
+...
+\end{verbatim}
+
+\subsection{字符串与注释测试}
+
+测试目标：验证字符串转义字符、嵌套注释、各种错误检测。
+
+\textcolor{red}{%
+% TODO: 编写包含字符串和注释的测试文件，运行词法分析器，将输出贴在下方。
+}
+
+\textbf{测试用例}（test\_string.cl）：
+\begin{lstlisting}[language=cool, caption={字符串测试}]
+(* 测试注释 (* 嵌套注释 *) *)
+class Test {
+    str1 : String <- "Hello\nWorld";  -- 转义字符
+    str2 : String <- "Quote\"Test\"";
+};
+\end{lstlisting}
+
+\textbf{测试命令与输出：}
+\begin{verbatim}
+$ ./lexer test_string.cl
+\end{verbatim}
+
+\textcolor{red}{%
+% TODO: 贴上实际输出，验证：
+% 1. 注释被正确忽略
+% 2. 字符串正确识别，转义字符处理正确
+% 3. STR_CONST token包含转义后的内容
+}
+\begin{verbatim}
+#name "test_string.cl"
+#2 CLASS
+#2 TYPEID Test
+#2 '{'
+#3 OBJECTID str1
+#3 ':'
+#3 TYPEID String
+#3 ASSIGN
+#3 STR_CONST "Hello\nWorld"
+...
+\end{verbatim}
+
+\subsection{错误处理测试}
+
+测试目标：验证各种错误情况的检测和报告。
+
+\textcolor{red}{%
+% TODO: 测试各种错误情况，每个错误单独测试，展示错误输出。
+}
+
+\textbf{测试1：未闭合字符串}
+\begin{verbatim}
+测试代码：class Main { str : String <- "unclosed
+输出：#1 ERROR "Unterminated string constant"
+\end{verbatim}
+
+\textbf{测试2：未匹配的注释结束符}
+\begin{verbatim}
+测试代码：class Main { x : Int; *) }
+输出：#1 ERROR "Unmatched *)"
+\end{verbatim}
+
+\textbf{测试3：EOF在注释中}
+\begin{verbatim}
+测试代码：(* comment without closing
+输出：#1 ERROR "EOF in comment"
+\end{verbatim}
+
+%TODO:  其他内容
+
+\subsection{集成测试}
+
+\textbf{本部分占15分，是评分重点！}
+
+测试目标：验证词法分析器能与编译器其他阶段（语法分析、语义分析、代码生成）正确协作，最终生成可运行的MIPS汇编代码。
+
+\textcolor{red}{%
+% TODO: 编写多个完整的COOL程序，展示完整的编译和运行过程：
+% 1. 至少包含2-3个不同复杂度的测试程序
+% 2. 展示完整的编译命令和输出
+% 3. 展示SPIM运行结果
+% 4. 说明词法分析器在整个编译流程中的作用
+% 5. 如果遇到问题，说明如何调试和解决
+}
+
+\textbf{测试程序}（hello.cl）：
+\begin{lstlisting}[language=cool, caption={集成测试程序}]
+class Main inherits IO {
+    main() : Object {
+        out_string("Hello, COOL!\n")
+    };
+};
+\end{lstlisting}
+
+\textbf{编译过程：}
+\begin{verbatim}
+$ ./mycoolc hello.cl
+\end{verbatim}
+
+\textcolor{red}{%
+% TODO: 如果编译成功，应该生成hello.s文件。贴出编译信息（如果有）。
+% 如果有警告或错误，说明问题并解决方案。
+}
+
+\textbf{运行结果：}
+\begin{verbatim}
+$ spim hello.s
+SPIM Version 8.0 of January 8, 2010
+Copyright 1990-2010, James R. Larus.
+All Rights Reserved.
+Loaded: /usr/class/lib/trap.handler
+Hello, COOL!
+COOL program successfully executed
+\end{verbatim}
+
+\textbf{测试结论：}
+\textcolor{red}{%
+% TODO: 总结集成测试结果，说明词法分析器与编译器其他部分配合正常。
+}
+
+词法分析器成功识别了所有Token，编译器顺利完成了语法分析、语义分析和代码生成，生成的MIPS汇编代码在SPIM模拟器上正确执行，输出了预期结果。这证明词法分析器的实现是正确和完整的。
+
+\section{遇到的问题与解决方案}
+\textcolor{red}{%
+% TODO: （可选，但建议填写）描述你在开发过程中遇到的主要挑战。
+% 例如：
+% 1. 对Flex状态机理解不深导致的问题。
+% 2. 规则优先级问题（关键字 vs 标识符）。
+% 3. C++与Flex的集成问题。
+% 简单说明你是如何解决这些问题的。这能很好地体现你的学习和解决问题的能力。
+}
+
+\section{总结}
+通过本次实验，我深入理解了词法分析的理论基础和Flex工具的工作原理。从有限状态自动机的理论出发，理解了Flex如何将正则表达式转换为高效的DFA，如何进行模式匹配和状态转换。在实践中，我成功实现了一个功能完整且健壮的COOL语言词法分析器，特别是掌握了状态管理机制在处理复杂词法结构时的应用。通过完整的集成测试，我验证了词法分析器能够与编译器其他组件正确协作，最终生成可执行的MIPS代码。这次实验让我对编译器前端有了全面而深刻的认识。
+
+\textcolor{red}{%
+% TODO: 根据你的真实感受修改总结。重点总结：
+% 1. 对Flex原理的理解和收获
+% 2. 对有限状态自动机理论的认识
+% 3. 实现过程中的主要挑战和解决方法
+% 4. 对整个编译流程的理解
+}
+
+\appendix
+\section{附录: cool.flex 完整源码}
+\label{sec:appendix_code}
+
+\textcolor{red}{%
+% TODO: 将你完成的cool.flex文件放在与此tex文件相同的目录下。
+% 重新编译后，完整代码会自动包含在这里。
+}
+
+\IfFileExists{cool.flex}
+  {\lstinputlisting[language=flex, basicstyle=\ttfamily\tiny]{cool.flex}}
+  {
+\textbf{说明：}将完成的 \texttt{cool.flex} 文件放在同一目录下，重新编译即可自动包含完整代码。
+
+示例结构（3段式）：定义段 -- 规则段 -- 用户代码段
+}
+
+\end{document}
